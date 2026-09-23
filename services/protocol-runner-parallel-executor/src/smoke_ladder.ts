@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { readControlToken } from './client.js'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { promises as fs } from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
@@ -44,7 +44,7 @@ interface SmokeRungResult {
 }
 
 interface ChildHandle {
-  child: ChildProcessWithoutNullStreams
+  child: ChildProcess
   stdout: Buffer[]
   stderr: Buffer[]
 }
@@ -550,6 +550,7 @@ function startChild(
     stdout: [],
     stderr: [],
   }
+  if (!child.stdout || !child.stderr) throw new Error('Smoke child must expose its configured output pipes.')
   child.stdout.on('data', (chunk: Buffer) => handle.stdout.push(chunk))
   child.stderr.on('data', (chunk: Buffer) => handle.stderr.push(chunk))
   return handle
@@ -569,7 +570,7 @@ async function writeChildLogs(root: string, prefix: string, handle: ChildHandle)
   await fs.writeFile(path.join(root, `${prefix}.stderr.log`), Buffer.concat(handle.stderr))
 }
 
-function waitForExit(child: ChildProcessWithoutNullStreams): Promise<number | null> {
+function waitForExit(child: ChildProcess): Promise<number | null> {
   return new Promise((resolve) => {
     if (child.exitCode !== null || child.signalCode !== null) {
       resolve(child.exitCode)
