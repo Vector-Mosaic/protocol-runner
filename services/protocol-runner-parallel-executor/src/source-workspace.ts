@@ -61,7 +61,8 @@ function inside(root: string, candidate: string): boolean {
 }
 
 export async function safeSourcePath(root: string, relative: string): Promise<string> {
-  if (!relative || relative !== relative.trim() || /[\\:*?\[\]\x00-\x1f]/.test(relative) || relative.startsWith('/')
+  // eslint-disable-next-line no-control-regex -- Control bytes are deliberately forbidden in source paths.
+  if (!relative || relative !== relative.trim() || /[\\:*?[\]\x00-\x1f]/.test(relative) || relative.startsWith('/')
     || relative.split('/').some((part) => !part || part === '.' || part === '..' || part.toLowerCase() === '.git')) {
     throw new Error(`Unsafe source path: ${relative}`)
   }

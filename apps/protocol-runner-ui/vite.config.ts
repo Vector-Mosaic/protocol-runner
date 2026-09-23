@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { randomBytes } from 'node:crypto'
 
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react-swc'
@@ -9,7 +10,10 @@ export default defineConfig(({ mode }) => {
   const port = Number(process.env.PROTOCOL_RUNNER_UI_PORT ?? '15174')
   const host = `127.0.0.1:${port}`
   const origin = `http://${host}`
+  // Vitest creates an internal Vite server; retain the boundary with a throwaway
+  // credential while normal dashboard startup still requires the launcher token.
   const token = process.env.PROTOCOL_RUNNER_CONTROL_TOKEN?.trim()
+    || (process.env.VITEST === 'true' ? randomBytes(32).toString('hex') : undefined)
   const localBoundary: Plugin = {
     name: 'runner-local-access',
     configureServer(server) {

@@ -323,7 +323,8 @@ function validateParallelGroupStep(
       } else {
         for (const [sourceIndex, sourcePath] of rawItem.owned_source_paths.entries()) {
           const label = `${itemPath}.owned_source_paths[${sourceIndex}]`
-          if (typeof sourcePath !== 'string' || !sourcePath || sourcePath !== sourcePath.trim() || /[\\:*?\[\]\x00-\x1f]/.test(sourcePath)
+          // eslint-disable-next-line no-control-regex -- Control bytes are deliberately forbidden in owned source paths.
+          if (typeof sourcePath !== 'string' || !sourcePath || sourcePath !== sourcePath.trim() || /[\\:*?[\]\x00-\x1f]/.test(sourcePath)
             || sourcePath.startsWith('/') || sourcePath.split('/').some((part) => !part || part === '.' || part === '..' || part.toLowerCase() === '.git')) {
             pushIssue(issues, 'parallel_group.source_path_unsafe', label, 'Owned source must be an exact slash-separated repo-relative file path without traversal or pathspec syntax.')
             continue

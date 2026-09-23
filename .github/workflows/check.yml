@@ -15,6 +15,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
@@ -52,8 +54,7 @@ jobs:
         run: tar -czf runtime-js.tar.gz packages/*/dist services/*/dist
       - name: Transfer runtime JavaScript
         if: ${{ !cancelled() && inputs.runtime_bundle && steps.build.outcome == 'success' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: runtime-js
-          path: runtime-js.tar.gz
-          retention-days: 1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "qualification-${GITHUB_RUN_ID}" runtime-js.tar.gz --draft --target "$GITHUB_SHA" --title "Temporary runtime transfer ${GITHUB_RUN_ID}" --notes 'Compiled JavaScript for the maintainer live check. Delete this draft after downloading; not a product release.'
