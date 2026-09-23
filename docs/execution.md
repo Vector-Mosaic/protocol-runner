@@ -42,6 +42,38 @@ not inherited. This does not isolate files readable by the local OS account,
 including the user's Codex configuration; use a separate account or machine for
 untrusted work.
 
+## Codex home and reproducible qualification
+
+Live workers inherit `CODEX_HOME` when it is set, or otherwise use Codex's normal
+user home. Codex can therefore load that home's global `AGENTS.md` or
+`AGENTS.override.md`, configuration and connected tools. Choosing a different
+worker workspace does not isolate these settings. Runner supplies the item
+prompt; it does not inject the user's global instructions itself. See
+[Codex instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md#how-codex-discovers-guidance).
+
+For qualification with a deliberate configuration, choose a dedicated Codex home
+outside the source tree and authenticate it through the normal `codex login`
+flow. Do not assume it inherits authentication from another home or copy
+credential files. Select the home only for the login and Runner processes, not
+as a permanent user or machine setting. For example, in a POSIX shell:
+
+```sh
+CODEX_HOME=/absolute/worker-codex-home codex login
+CODEX_HOME=/absolute/worker-codex-home node services/protocol-runner-parallel-executor/dist/smoke_ladder.js --live --rung real_1 --workspace /absolute/workspace
+```
+
+In PowerShell, set `$env:CODEX_HOME` in a dedicated shell used for login and the
+smokes; it applies to that process and its children. Use the same selected Codex
+executable for both. Configure the intended model in that home or select it with
+`PROTOCOL_RUNNER_PARALLEL_EXECUTOR_CODEX_MODEL`. A named profile must exist in the
+selected home. Keep the existing `workspace-write` sandbox and approval policy.
+Project instructions and other applicable configuration can still apply; a
+dedicated home is configuration separation, not an additional sandbox.
+
+`--ignore-user-config` skips `config.toml`; it is **not a guarantee that global
+`AGENTS.md` is excluded**. `--ignore-rules` concerns execution-policy rules and
+does not provide instruction isolation either.
+
 ## Advanced settings
 
 All executor settings have the `PROTOCOL_RUNNER_PARALLEL_EXECUTOR_` prefix:
@@ -102,5 +134,6 @@ Set `PROTOCOL_RUNNER_PARALLEL_EXECUTOR_CODEX_COMMAND` to its absolute path when
 necessary; an older CLI may not support the model selected in your configuration.
 Runner does not upgrade the CLI or substitute another model automatically.
 Global Codex instructions and connected tools also remain active. A short smoke
-timeout may be consumed by unrelated machine-specific onboarding; inspect the
-retained attempt before deciding whether to retry with a suitable bound or profile.
+timeout may be consumed by unrelated machine-specific onboarding. Inspect the
+retained attempt; use the dedicated-home procedure above when that inherited
+configuration is outside the intended qualification.

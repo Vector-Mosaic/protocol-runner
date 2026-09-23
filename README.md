@@ -66,10 +66,10 @@ contracts, inputs and outputs the worker may access:
 pnpm start -- --live --workspace /absolute/path/to/workspace
 ```
 
-Live execution is experimental in this initial release. The Windows qualification
-produced the expected real-worker output, but local global instructions kept the
-workflow blocked. Read the [observed results and limits](docs/evidence.md) before
-relying on that profile.
+One-worker live completion and explicit live cancellation passed on Windows using
+a [dedicated Codex home](docs/execution.md#codex-home-and-reproducible-qualification).
+Read the [observed results and limits](docs/evidence.md) for the tested environment
+and the scope of those checks.
 
 For the bundled example, deliberately select this repository as the workspace. The
 live launcher uses `workspace-write`; the contract is still a work assignment, not a
