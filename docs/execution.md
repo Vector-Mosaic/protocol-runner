@@ -79,3 +79,20 @@ process-control smokes also require `--live`. Timing and recovery smokes use
 local deterministic worker fixtures. No smoke program defaults to bypassing
 Codex approvals and sandboxing. Run them only in a workspace and account whose
 resource use and outputs you intend.
+
+The smallest live qualification is one completion and one stop scenario:
+
+```sh
+node services/protocol-runner-parallel-executor/dist/smoke_ladder.js --live --rung real_1 --workspace /absolute/workspace
+node services/protocol-runner-parallel-executor/dist/process_control_smoke.js --live --scenario stop --workspace /absolute/workspace
+```
+
+Use an existing trusted Git workspace. These two commands preserve the configured
+Codex model/profile, force `workspace-write` without bypass, and limit each worker
+to 120 seconds. Each uses one worker at a time. The stop scenario waits for the
+real worker to write its readiness marker before stopping it; it checks the
+resulting API state, retained cancellation evidence, and process termination.
+Outputs go under the chosen workspace's `.protocol-runner/qualification/`.
+Console output is a procedural summary; worker evidence stays in those ignored
+local directories. Neither command evaluates the substantive quality of model
+reasoning.

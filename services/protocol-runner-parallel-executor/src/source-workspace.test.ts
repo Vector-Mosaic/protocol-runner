@@ -21,6 +21,10 @@ async function fixture(): Promise<{ root: string; repository: string; base: stri
   await git(repository, 'init')
   await git(repository, 'config', 'user.name', 'Test')
   await git(repository, 'config', 'user.email', 'test@localhost')
+  // Disposable fixture repos must not leave detached Git maintenance writing
+  // metadata after an awaited command returns and teardown begins.
+  await git(repository, 'config', 'maintenance.auto', 'false')
+  await git(repository, 'config', 'gc.auto', '0')
   await fs.writeFile(path.join(repository, 'owned.bin'), Buffer.from([1, 2, 3]))
   await fs.writeFile(path.join(repository, 'delete.md'), 'old source')
   await fs.writeFile(path.join(repository, 'other.md'), 'untouched base')
@@ -84,8 +88,9 @@ test('source attempts isolate writes and return binary/new/deleted files through
     assert.equal(released, true)
     await assert.rejects(fs.access(state.workspace), /ENOENT/)
     const receiver = path.join(root, 'receiver')
-    await exec('git', ['clone', '--no-local', repository, receiver], { windowsHide: true })
-    await git(receiver, 'fetch', handoff.bundle, handoff.ref)
+    await exec('git', ['clone', '--config', 'maintenance.auto=false', '--config', 'gc.auto=0',
+      '--no-local', repository, receiver], { windowsHide: true })
+    await git(receiver, 'fetch', '--no-auto-maintenance', handoff.bundle, handoff.ref)
     assert.equal(await git(receiver, 'rev-parse', 'FETCH_HEAD'), handoff.commit)
     const binary = await exec('git', ['-C', receiver, 'show', 'FETCH_HEAD:owned.bin'], { encoding: 'buffer', windowsHide: true })
     assert.deepEqual(binary.stdout, Buffer.from([0, 255, 19, 44]))

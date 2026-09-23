@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { HttpProtocolRunnerParallelApiClient, readControlToken } from './client.js'
 import { ProtocolRunnerParallelExecutor } from './executor.js'
 import { CodexExecWorkerLauncher } from './launcher.js'
+import { sourceWriterProcessStopped } from './source-workspace.js'
 import type { ParallelExecutorDecision } from './types.js'
 
 type JsonRecord = Record<string, unknown>
@@ -76,13 +77,23 @@ interface ScenarioResult {
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url))
 const serviceRoot = path.resolve(moduleDir, '..')
-const repoRoot = path.resolve(serviceRoot, '..', '..')
+const sourceRoot = path.resolve(serviceRoot, '..', '..')
+const workspaceIndex = process.argv.indexOf('--workspace')
+const workspaceArg = workspaceIndex < 0 ? undefined : process.argv[workspaceIndex + 1]
+if (workspaceIndex >= 0 && (!workspaceArg || workspaceArg.startsWith('--'))) throw new Error('--workspace requires a directory.')
+if (process.argv.includes('--live') && !workspaceArg) throw new Error('Live smoke requires --workspace <directory>.')
+const repoRoot = await fs.realpath(path.resolve(workspaceArg ?? sourceRoot))
+if (!(await fs.stat(repoRoot)).isDirectory()) throw new Error('Smoke workspace must be an existing directory.')
 const timestamp = timestampSlug(new Date())
 const identityTimestamp = timestamp.toLowerCase()
 const smokeRoot = path.resolve(
   process.env.PROTOCOL_RUNNER_PARALLEL_PROCESS_CONTROL_SMOKE_ROOT?.trim() ||
-    path.join(repoRoot, 'artifacts', 'protocol_runner', 'parallel_process_control_smoke', timestamp),
+    path.join(repoRoot, '.protocol-runner', 'qualification', 'process-control', timestamp),
 )
+const relativeSmokeRoot = path.relative(repoRoot, smokeRoot)
+if (!relativeSmokeRoot || relativeSmokeRoot === '..' || relativeSmokeRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeSmokeRoot)) {
+  throw new Error('Smoke output root must be a child of the explicit workspace.')
+}
 const context: ProcessControlContext = {
   repoRoot,
   serviceRoot,
@@ -100,10 +111,12 @@ await main()
 
 async function main(): Promise<void> {
   if (!process.argv.includes('--live')) throw new Error('This smoke launches real Codex workers. Pass --live explicitly.')
+  const scenarioIndex = process.argv.indexOf('--scenario')
+  const selected = scenarioIndex < 0 ? 'stop' : process.argv[scenarioIndex + 1]
+  if (selected !== 'stop' && selected !== 'cancel') throw new Error('--scenario must be stop or cancel.')
   await fs.mkdir(context.smokeRoot, { recursive: true })
   const scenarios: Array<(ctx: ProcessControlContext) => Promise<ScenarioResult>> = [
-    (ctx) => runControlScenario(ctx, 'cancel_active_attempt', 'cancel'),
-    (ctx) => runControlScenario(ctx, 'stop_active_group', 'stop'),
+    (ctx) => runControlScenario(ctx, selected === 'stop' ? 'stop_active_group' : 'cancel_active_attempt', selected),
   ]
 
   const results: ScenarioResult[] = []
@@ -140,66 +153,87 @@ async function runControlScenario(
 ): Promise<ScenarioResult> {
   return runScenario(ctx, scenarioId, async (scenario) => {
     await preflightScenario(scenario)
+    const model = process.env.PROTOCOL_RUNNER_PARALLEL_EXECUTOR_CODEX_MODEL?.trim()
+    const profile = process.env.PROTOCOL_RUNNER_PARALLEL_EXECUTOR_CODEX_PROFILE?.trim()
     const executor = new ProtocolRunnerParallelExecutor({
       client: scenario.client,
       launcher: new CodexExecWorkerLauncher({
         executor_id: 'process_control_smoke_executor',
         workspace_root: scenario.repoRoot,
         codex_command: scenario.codexCommand,
-        codex_base_args: [],
-        sandbox: process.env.PROTOCOL_RUNNER_PARALLEL_EXECUTOR_CODEX_SANDBOX?.trim() || 'workspace-write',
+        codex_base_args: ['exec'],
+        sandbox: 'workspace-write',
+        bypass_approvals_and_sandbox: false,
+        hard_timeout_ms: 120_000,
+        ...(model ? { model } : {}),
+        ...(profile ? { profile } : {}),
       }),
       executor_id: 'process_control_smoke_executor',
       capacity: 1,
       lease_ttl_ms: 60_000,
-      control_poll_interval_ms: 25,
+      control_poll_interval_ms: 250,
     })
     const tick = executor.tick()
-    const active = await waitForActiveAttemptProcess(scenario)
+    const requestStop = () => executor.requestShutdown()
+    process.once('SIGINT', requestStop)
+    process.once('SIGTERM', requestStop)
+    try {
+      const active = await waitForActiveAttemptProcess(scenario)
 
-    if (action === 'cancel') {
-      await requestJson(
-        `${scenario.apiBaseUrl}/api/runs/${scenario.run_instance_id}/parallel-groups/${scenario.group_id}/attempts/${active.attempt_id}/cancel`,
-        {
+      if (action === 'cancel') {
+        await requestJson(
+          `${scenario.apiBaseUrl}/api/runs/${scenario.run_instance_id}/parallel-groups/${scenario.group_id}/attempts/${active.attempt_id}/cancel`,
+          {
+            method: 'POST',
+            body: { lease_id: active.lease_id, reason: 'process control smoke cancellation' },
+          },
+        )
+      } else {
+        await requestJson(`${scenario.apiBaseUrl}/api/runs/${scenario.run_instance_id}/parallel-groups/${scenario.group_id}/stop`, {
           method: 'POST',
-          body: { lease_id: active.lease_id, reason: 'process control smoke cancellation' },
-        },
-      )
-    } else {
-      await requestJson(`${scenario.apiBaseUrl}/api/runs/${scenario.run_instance_id}/parallel-groups/${scenario.group_id}/stop`, {
-        method: 'POST',
-        body: {},
-      })
+          body: {},
+        })
+      }
+
+      const decision = await tick
+      assertEqual(decision.action, 'launched', `${scenarioId} should launch exactly one child process.`)
+      assertEqual(decision.needs_attention_count, 1, `${scenarioId} should report one non-completed launch outcome.`)
+
+      const diagnostics = await readDiagnostics(scenario)
+      const group = firstGroup(diagnostics)
+      if (action === 'cancel') {
+        assertEqual(diagnostics.status, 'blocked', `${scenarioId} run should block.`)
+        assertEqual(group.status, 'needs_attention', `${scenarioId} group should need attention.`)
+        assertEqual(group.leases[0]?.status, 'cancelled', `${scenarioId} lease should be cancelled.`)
+        assertEqual(group.attempts[0]?.status, 'cancelled', `${scenarioId} attempt should be cancelled.`)
+        assertEqual(group.items[0]?.status, 'needs_recovery', `${scenarioId} item should need recovery.`)
+      } else {
+        assertEqual(diagnostics.status, 'blocked', `${scenarioId} run should block.`)
+        assertEqual(group.status, 'stopped', `${scenarioId} group should be stopped.`)
+        assertEqual(group.leases[0]?.status, 'cancelled', `${scenarioId} lease should be cancelled.`)
+        assertEqual(group.attempts[0]?.status, 'cancelled', `${scenarioId} attempt should be cancelled.`)
+        assertEqual(group.items[0]?.status, 'stopped', `${scenarioId} item should be stopped.`)
+      }
+
+      const processPath = path.join(active.attempt_dir, 'process.json')
+      const resultPath = path.join(active.attempt_dir, 'result.json')
+      await assertFileIncludes(active.process_started_path, '"pid"')
+      await assertFileIncludes(processPath, '"killed_by_runner": true')
+      await assertFileIncludes(processPath, '"kill_reason": "cancelled"')
+      await assertFileIncludes(resultPath, '"launcher_status": "cancelled"')
+      await assertFileIncludes(resultPath, '"kill_reason": "cancelled"')
+      const processEvidence = JSON.parse(await fs.readFile(processPath, 'utf8')) as { kill_error?: unknown; pid?: number }
+      if (processEvidence.kill_error !== undefined) throw new Error('Worker termination reported an error; inspect the retained process evidence.')
+      if (processEvidence.pid === undefined || !await sourceWriterProcessStopped(processEvidence.pid)) {
+        throw new Error('Worker process-tree termination could not be established; inspect retained process evidence.')
+      }
+      return { diagnostics, decision, active, processPath, resultPath }
+    } finally {
+      executor.requestShutdown()
+      await tick
+      process.off('SIGINT', requestStop)
+      process.off('SIGTERM', requestStop)
     }
-
-    const decision = await tick
-    assertEqual(decision.action, 'launched', `${scenarioId} should launch exactly one child process.`)
-    assertEqual(decision.needs_attention_count, 1, `${scenarioId} should report one non-completed launch outcome.`)
-
-    const diagnostics = await readDiagnostics(scenario)
-    const group = firstGroup(diagnostics)
-    if (action === 'cancel') {
-      assertEqual(diagnostics.status, 'blocked', `${scenarioId} run should block.`)
-      assertEqual(group.status, 'needs_attention', `${scenarioId} group should need attention.`)
-      assertEqual(group.leases[0]?.status, 'cancelled', `${scenarioId} lease should be cancelled.`)
-      assertEqual(group.attempts[0]?.status, 'cancelled', `${scenarioId} attempt should be cancelled.`)
-      assertEqual(group.items[0]?.status, 'needs_recovery', `${scenarioId} item should need recovery.`)
-    } else {
-      assertEqual(diagnostics.status, 'blocked', `${scenarioId} run should block.`)
-      assertEqual(group.status, 'stopped', `${scenarioId} group should be stopped.`)
-      assertEqual(group.leases[0]?.status, 'cancelled', `${scenarioId} lease should be cancelled.`)
-      assertEqual(group.attempts[0]?.status, 'cancelled', `${scenarioId} attempt should be cancelled.`)
-      assertEqual(group.items[0]?.status, 'stopped', `${scenarioId} item should be stopped.`)
-    }
-
-    const processPath = path.join(active.attempt_dir, 'process.json')
-    const resultPath = path.join(active.attempt_dir, 'result.json')
-    await assertFileIncludes(active.process_started_path, '"pid"')
-    await assertFileIncludes(processPath, '"killed_by_runner": true')
-    await assertFileIncludes(processPath, '"kill_reason": "cancelled"')
-    await assertFileIncludes(resultPath, '"launcher_status": "cancelled"')
-    await assertFileIncludes(resultPath, '"kill_reason": "cancelled"')
-    return { diagnostics, decision, active, processPath, resultPath }
   })
 }
 
@@ -291,7 +325,7 @@ async function runScenario(
 }
 
 async function waitForActiveAttemptProcess(scenario: ScenarioContext): Promise<ActiveAttempt> {
-  const deadline = Date.now() + 30_000
+  const deadline = Date.now() + 110_000
   while (Date.now() < deadline) {
     const diagnostics = await readDiagnostics(scenario)
     const group = firstGroup(diagnostics)
@@ -300,7 +334,9 @@ async function waitForActiveAttemptProcess(scenario: ScenarioContext): Promise<A
     if (activeLease !== undefined && attempt?.evidence_dir !== null && attempt?.evidence_dir !== undefined) {
       const attemptDir = path.join(diagnostics.evidence_paths.run_dir, attempt.evidence_dir)
       const processStartedPath = path.join(attemptDir, 'process_started.json')
-      if (await fileExists(processStartedPath)) {
+      const readyPath = path.join(scenario.scenarioRoot, 'worker_ready.txt')
+      if (await fileExists(processStartedPath) && await fileExists(readyPath)
+        && (await fs.readFile(readyPath, 'utf8')).trim() === 'PROTOCOL_RUNNER_WORKER_READY') {
         return {
           attempt_id: activeLease.attempt_id,
           lease_id: activeLease.lease_id,
@@ -309,9 +345,12 @@ async function waitForActiveAttemptProcess(scenario: ScenarioContext): Promise<A
         }
       }
     }
-    await sleep(50)
+    if (activeLease === undefined && group.attempts.length > 0) {
+      throw new Error('Worker ended before writing its readiness marker; inspect retained process evidence.')
+    }
+    await sleep(250)
   }
-  throw new Error('Timed out waiting for active worker process_started evidence.')
+  throw new Error('Timed out waiting for the live worker readiness marker; shutdown will cancel its process.')
 }
 
 async function preflightScenario(scenario: ScenarioContext): Promise<void> {
@@ -340,7 +379,7 @@ async function writeScenarioFixtures(
   await fs.mkdir(path.dirname(contractPath), { recursive: true })
   await fs.mkdir(path.dirname(inputPath), { recursive: true })
   await fs.mkdir(sealedDir, { recursive: true })
-  await fs.writeFile(contractPath, renderContract(), 'utf8')
+  await fs.writeFile(contractPath, renderContract(path.join(scenarioRoot, 'worker_ready.txt')), 'utf8')
   await fs.writeFile(inputPath, ['# Parallel Process Control Smoke Input', '', 'item_id: smoke_item_001', ''].join('\n'), 'utf8')
 
   const workPlan = {
@@ -381,13 +420,17 @@ async function writeScenarioFixtures(
   return workPlan
 }
 
-function renderContract(): string {
+function renderContract(readinessPath: string): string {
   return [
     '# Parallel Process Control Smoke Contract',
     '',
     'This smoke contract exists only to prove that active launcher child processes can be cancelled or stopped through API-owned runner state.',
     'If allowed to run to completion, a worker would write only its assigned sealed output and status report.',
     'The smoke cancels or stops the worker before semantic work is evaluated.',
+    'Read only your assigned input and this contract. Do not modify application source or inspect unrelated workspace files.',
+    `Use one shell tool call to write exactly PROTOCOL_RUNNER_WORKER_READY followed by a newline to ${JSON.stringify(readinessPath)}, then sleep for 90 seconds in the same call.`,
+    'On Windows use PowerShell WriteAllText followed by Start-Sleep -Seconds 90; on Unix write the file and use sleep 90.',
+    'The coordinator will stop this attempt after observing that marker. Do not call the Runner API, write a completion report, or launch background tasks.',
     '',
   ].join('\n')
 }
@@ -470,6 +513,7 @@ async function requestJson(url: string, options: { method: 'GET' | 'POST'; body?
     method: options.method,
     redirect: 'error',
     headers: { authorization: `Bearer ${await readControlToken()}` },
+    signal: AbortSignal.timeout(10_000),
     ...(options.body === undefined
       ? {}
       : {
@@ -480,7 +524,7 @@ async function requestJson(url: string, options: { method: 'GET' | 'POST'; body?
   const text = await response.text()
   const parsed = text.trim().length === 0 ? {} : (JSON.parse(text) as JsonRecord)
   if (!response.ok) {
-    throw new Error(`${options.method} ${url} returned HTTP ${response.status}: ${text}`)
+    throw new Error(`${options.method} ${url} returned HTTP ${response.status}. Inspect the retained API diagnostics.`)
   }
   return parsed
 }
@@ -490,7 +534,7 @@ async function waitForHealth(url: string): Promise<void> {
   let lastError = ''
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(url)
+      const response = await fetch(url, { signal: AbortSignal.timeout(2_000) })
       if (response.ok) {
         return
       }

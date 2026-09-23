@@ -81,13 +81,23 @@ interface RunDiagnostics {
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url))
 const serviceRoot = path.resolve(moduleDir, '..')
-const repoRoot = path.resolve(serviceRoot, '..', '..')
+const sourceRoot = path.resolve(serviceRoot, '..', '..')
+const workspaceIndex = process.argv.indexOf('--workspace')
+const workspaceArg = workspaceIndex < 0 ? undefined : process.argv[workspaceIndex + 1]
+if (workspaceIndex >= 0 && (!workspaceArg || workspaceArg.startsWith('--'))) throw new Error('--workspace requires a directory.')
+if (process.argv.includes('--live') && !workspaceArg) throw new Error('Live smoke requires --workspace <directory>.')
+const repoRoot = await fs.realpath(path.resolve(workspaceArg ?? sourceRoot))
+if (!(await fs.stat(repoRoot)).isDirectory()) throw new Error('Smoke workspace must be an existing directory.')
 const timestamp = timestampSlug(new Date())
 const identityTimestamp = timestamp.toLowerCase()
 const smokeRoot = path.resolve(
   process.env.PROTOCOL_RUNNER_PARALLEL_SMOKE_ROOT?.trim() ||
-    path.join(repoRoot, 'artifacts', 'protocol_runner', 'parallel_smoke_ladder', timestamp),
+    path.join(repoRoot, '.protocol-runner', 'qualification', 'completion', timestamp),
 )
+const relativeSmokeRoot = path.relative(repoRoot, smokeRoot)
+if (!relativeSmokeRoot || relativeSmokeRoot === '..' || relativeSmokeRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relativeSmokeRoot)) {
+  throw new Error('Smoke output root must be a child of the explicit workspace.')
+}
 const context: RungContext = {
   repoRoot,
   serviceRoot,
@@ -481,18 +491,29 @@ async function runExecutor(
         : { PROTOCOL_RUNNER_PARALLEL_EXECUTOR_LAUNCH_BATCH_INTERVAL_MS: String(rung.launch_batch_interval_ms) }),
       PROTOCOL_RUNNER_PARALLEL_EXECUTOR_WORKSPACE_ROOT: ctx.repoRoot,
       PROTOCOL_RUNNER_PARALLEL_EXECUTOR_HEALTH_PORT: String(await freePort()),
-      PROTOCOL_RUNNER_PARALLEL_EXECUTOR_CODEX_BYPASS_APPROVALS_AND_SANDBOX:
-        process.env.PROTOCOL_RUNNER_PARALLEL_EXECUTOR_CODEX_BYPASS_APPROVALS_AND_SANDBOX ?? 'false',
-      PROTOCOL_RUNNER_PARALLEL_EXECUTOR_HARD_TIMEOUT_MS:
-        process.env.PROTOCOL_RUNNER_PARALLEL_EXECUTOR_HARD_TIMEOUT_MS ?? '1200000',
+      PROTOCOL_RUNNER_PARALLEL_EXECUTOR_CODEX_SANDBOX: 'workspace-write',
+      PROTOCOL_RUNNER_PARALLEL_EXECUTOR_CODEX_BYPASS_APPROVALS_AND_SANDBOX: 'false',
+      PROTOCOL_RUNNER_PARALLEL_EXECUTOR_HARD_TIMEOUT_MS: '120000',
     },
   })
-  const exitCode = await waitForExit(executor.child)
-  await writeChildLogs(rungRoot, 'executor', executor)
-  if (exitCode !== 0) {
-    throw new Error(`Executor exited with code ${exitCode}.`)
+  const stopExecutor = () => {
+    if (executor.child.connected) executor.child.send({ type: 'shutdown' })
   }
-  return { exitCode }
+  process.once('SIGINT', stopExecutor)
+  process.once('SIGTERM', stopExecutor)
+  try {
+    const exitCode = await waitForExit(executor.child)
+    if (exitCode !== 0) throw new Error(`Executor exited with code ${exitCode}.`)
+    return { exitCode }
+  } finally {
+    process.off('SIGINT', stopExecutor)
+    process.off('SIGTERM', stopExecutor)
+    if (executor.child.exitCode === null && executor.child.signalCode === null) {
+      stopExecutor()
+      await waitForExit(executor.child)
+    }
+    await writeChildLogs(rungRoot, 'executor', executor)
+  }
 }
 
 async function verifyRungOutputs(ctx: RungContext, rung: SmokeRung, group: ParallelGroupState): Promise<string[]> {
@@ -522,6 +543,7 @@ function startChild(
     cwd: options.cwd,
     env: options.env,
     windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
   })
   const handle: ChildHandle = {
     child,
@@ -549,7 +571,7 @@ async function writeChildLogs(root: string, prefix: string, handle: ChildHandle)
 
 function waitForExit(child: ChildProcessWithoutNullStreams): Promise<number | null> {
   return new Promise((resolve) => {
-    if (child.exitCode !== null) {
+    if (child.exitCode !== null || child.signalCode !== null) {
       resolve(child.exitCode)
       return
     }
@@ -565,6 +587,7 @@ async function requestJson(
     method: options.method,
     redirect: 'error',
     headers: { authorization: `Bearer ${await readControlToken()}` },
+    signal: AbortSignal.timeout(10_000),
     ...(options.body === undefined
       ? {}
       : {
@@ -575,7 +598,7 @@ async function requestJson(
   const text = await response.text()
   const parsed = text.trim().length === 0 ? {} : (JSON.parse(text) as JsonRecord)
   if (!response.ok) {
-    throw new Error(`${options.method} ${url} returned HTTP ${response.status}: ${text}`)
+    throw new Error(`${options.method} ${url} returned HTTP ${response.status}. Inspect the retained API diagnostics.`)
   }
   return parsed
 }
@@ -585,7 +608,7 @@ async function waitForHealth(url: string): Promise<void> {
   let lastError = ''
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(url)
+      const response = await fetch(url, { signal: AbortSignal.timeout(2_000) })
       if (response.ok) {
         return
       }

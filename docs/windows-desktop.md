@@ -20,7 +20,7 @@ demonstration does not start any of these services.
   not a visible sidebar selector.
 
 This integration is experimental and sensitive to Codex Desktop UI changes.
-The public extraction has not been live-qualified against every Desktop release.
+This public extraction has not received a live end-to-end Desktop/Discord check.
 A healthy HTTP endpoint does not prove UI selection or prompt submission works.
 Keep initial execution supervised and inspect selection/readback results.
 

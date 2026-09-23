@@ -31,20 +31,27 @@ jobs:
       - name: Install pinned dependencies
         run: pnpm install --frozen-lockfile
       - name: Build standalone packages
+        id: build
         run: pnpm build
       - name: Focused package checks
         run: pnpm test
       - name: Source workspace lifecycle
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: python -B -m unittest packages.concurrent_development.test_core
       - name: Lint
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: pnpm lint
       - name: Reproduce scoped recovery
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: pnpm demo
+      - name: Check foreground startup and local access
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: node scripts/startup-check.mjs
       - name: Prepare local runtime JavaScript
-        if: inputs.runtime_bundle
+        if: ${{ !cancelled() && inputs.runtime_bundle && steps.build.outcome == 'success' }}
         run: tar -czf runtime-js.tar.gz packages/*/dist services/*/dist
       - name: Transfer runtime JavaScript
-        if: inputs.runtime_bundle
+        if: ${{ !cancelled() && inputs.runtime_bundle && steps.build.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: runtime-js

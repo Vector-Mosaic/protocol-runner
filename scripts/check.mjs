@@ -29,6 +29,7 @@ function visit(pkg) {
 }
 packages.forEach(visit)
 const stages = action === 'all' ? ['build', 'test', 'lint'] : [action]
+let failed = false
 for (const stage of stages) {
   for (const pkg of ordered) {
     if (!pkg.scripts?.[stage]) continue
@@ -37,6 +38,10 @@ for (const stage of stages) {
     if (!npmExec) throw new Error('Run through pnpm: pnpm ' + action)
     const child = spawnSync(process.execPath, [npmExec, '--dir', path.join(root, pkg.dir), 'run', stage], { stdio: 'inherit', env: process.env })
     if (child.error) throw child.error
-    if (child.status !== 0) process.exit(child.status ?? 1)
+    if (child.status !== 0) {
+      if (stage === 'build') process.exit(child.status ?? 1)
+      failed = true
+    }
   }
 }
+if (failed) process.exitCode = 1
