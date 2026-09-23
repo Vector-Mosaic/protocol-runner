@@ -1,0 +1,2092 @@
+openapi: 3.1.0
+info:
+  title: Protocol Runner API
+  version: 0.3.0
+  description: >
+    Local loopback HTTP interface for Protocol Runner run lifecycle control,
+    procedural evidence reads, serial start-report confirmation, structured
+    status-report intake, API-owned parallel-group
+    preflight/lease/heartbeat/attempt-result controls, and Codex Desktop
+    operator-gate proxy controls. This contract does not define
+    framework/contract markdown files, work-plan authoring, Codex Desktop
+    internals, Discord internals, codex exec internals, or semantic model-work
+    validation. All control and evidence requests require the local control bearer
+    token. The server accepts its configured exact loopback Host and, when
+    present, its exact Origin; other hosts/origins receive HTTP 403. Missing or
+    invalid control credentials receive HTTP 401. Browser clients use the local
+    dashboard proxy, which retains the token server-side. No CORS access is granted.
+servers:
+  - url: http://127.0.0.1:4831
+security:
+  - LocalControlToken: []
+paths:
+  /health:
+    get:
+      operationId: protocolRunnerHealth
+      security: []
+      responses:
+        '200':
+          description: Minimal service health without credentials; adapter health with valid credentials.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/HealthResponse'
+                  - type: object
+                    additionalProperties: false
+                    required: [ok, service]
+                    properties:
+                      ok:
+                        const: true
+                      service:
+                        const: protocol-runner-api
+  /api/diagnostics:
+    get:
+      operationId: protocolRunnerDiagnostics
+      responses:
+        '200':
+          description: Global store and adapter diagnostics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiagnosticsResponse'
+  /api/desktop-operator-gate:
+    get:
+      operationId: getProtocolRunnerDesktopOperatorGate
+      responses:
+        '200':
+          description: Current shared Codex Desktop operator-gate state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DesktopOperatorGateResponse'
+  /api/desktop-operator-gate/wait:
+    post:
+      operationId: waitProtocolRunnerDesktopOperatorGate
+      responses:
+        '200':
+          description: The current shared Codex Desktop queue is held until explicit release.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DesktopOperatorGateResponse'
+  /api/desktop-operator-gate/allow-now:
+    post:
+      operationId: allowProtocolRunnerDesktopOperatorGateNow
+      responses:
+        '200':
+          description: The current shared Codex Desktop queue snapshot is released for serial execution.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DesktopOperatorGateResponse'
+  /api/runs:
+    get:
+      operationId: listProtocolRunnerRuns
+      responses:
+        '200':
+          description: List persisted run instances.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, runs]
+                properties:
+                  ok:
+                    const: true
+                  runs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RunListItem'
+    post:
+      operationId: createProtocolRunnerRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRunRequest'
+      responses:
+        '201':
+          description: >
+            The complete run graph and staged filesystem evidence were created
+            atomically and promoted as one discoverable run. A failed creation
+            leaves no discoverable run or owned partial state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunEnvelope'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    get:
+      operationId: getProtocolRunnerRun
+      responses:
+        '200':
+          description: Current run state and frozen work plan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunEnvelope'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/validate:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    post:
+      operationId: validateProtocolRunnerRun
+      responses:
+        '200':
+          description: Pure work-plan validation plus runtime contract-file preflight result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationEnvelope'
+  /api/runs/{run_instance_id}/bind:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    post:
+      operationId: bindProtocolRunnerRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindRunRequest'
+      responses:
+        '200':
+          description: Run is bound to a Codex thread and runner-owned relay channel metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '502':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/automation:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    post:
+      operationId: setProtocolRunnerAutomation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AutomationRequest'
+      responses:
+        '200':
+          description: Run automation flags were updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunEnvelope'
+  /api/runs/{run_instance_id}/start:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    post:
+      operationId: startProtocolRunnerRun
+      responses:
+        '200':
+          description: Current serial step was rendered/sent or blocked before send; current parallel group was preflighted and handed to the executor lane without launching workers in the API.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/PromptSendEnvelope'
+                  - $ref: '#/components/schemas/ParallelGroupEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/pause:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    post:
+      operationId: pauseProtocolRunnerRun
+      responses:
+        '200':
+          description: Run was paused without advancing the cursor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunEnvelope'
+  /api/runs/{run_instance_id}/resume:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    post:
+      operationId: resumeProtocolRunnerRun
+      responses:
+        '200':
+          description: Current step was resent after pause/block state, or blocked before send.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptSendEnvelope'
+  /api/runs/{run_instance_id}/retry-current:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    post:
+      operationId: retryCurrentProtocolRunnerStep
+      responses:
+        '200':
+          description: Current step was retried without advancing the cursor, or blocked before send.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PromptSendEnvelope'
+  /api/runs/{run_instance_id}/fail:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    post:
+      operationId: failProtocolRunnerRun
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: >
+            Run was marked failed with an operator reason. Fail is allowed from
+            draft, bound, ready, dispatching_prompt,
+            waiting_for_start_report, waiting_for_completion_report, running,
+            paused, and blocked. Completed, failed, and closed runs cannot be
+            re-failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/close:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    post:
+      operationId: closeProtocolRunnerRun
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloseRunRequest'
+      responses:
+        '200':
+          description: >
+            Explicit closeout cleaned the runner-owned relay binding/channel
+            when present and deleted runner-instance procedural artifacts.
+            Contract-produced work outputs are outside the runner run folder
+            and are not deleted by this endpoint unless
+            delete_sealed_outputs is explicitly true. When requested, only
+            declared parallel sealed-output primary artifacts and empty parent
+            folders are deleted. Successful closeout removes all runner-owned
+            procedural descendants and permits later reuse of the same run ID.
+            Ordinary closeout returns 409 before cleanup when legacy
+            overlapping storage could contain retained output. An absent or
+            empty legacy descendant output root may close safely; an ancestor
+            or equal overlap remains blocked. With delete_sealed_outputs true,
+            a descendant overlap may delete declared primaries, but a second
+            check blocks run-directory retirement if undeclared output leaves
+            that root nonempty. Cleanup also requires each physical item parent
+            and unfollowed target path beneath both the physical declared base
+            and contract root, rechecking immediately before unlink.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloseoutEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/return:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    post:
+      operationId: acceptProtocolRunnerReturn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReturnRunRequest'
+      responses:
+        '200':
+          description: Structured completion status report was accepted or blocked with diagnostics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReturnEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/start-report:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    post:
+      operationId: acceptProtocolRunnerStepStartReport
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StepStartReportRequest'
+      responses:
+        '200':
+          description: Matching start-report nonce was accepted and the run is now waiting for the completion status report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartReportEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/parallel-groups/{group_id}/preflight:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+      - $ref: '#/components/parameters/ParallelGroupId'
+    post:
+      operationId: preflightProtocolRunnerParallelGroup
+      responses:
+        '200':
+          description: >
+            Current parallel group was preflighted without launching workers.
+            Preflight fails when declared sealed-output storage overlaps the
+            runner-owned run directory, escapes its physical declared
+            base/contract-root boundary, or names an already-existing primary
+            target of any filesystem kind.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParallelPreflightEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/parallel-groups/{group_id}:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+      - $ref: '#/components/parameters/ParallelGroupId'
+    get:
+      operationId: getProtocolRunnerParallelGroup
+      responses:
+        '200':
+          description: Current API-owned procedural state for one parallel group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParallelGroupEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/parallel-groups/{group_id}/leases:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+      - $ref: '#/components/parameters/ParallelGroupId'
+    post:
+      operationId: grantProtocolRunnerParallelLeases
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParallelLeaseRequest'
+      responses:
+        '200':
+          description: API-granted worker leases for eligible pending items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParallelGroupEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/parallel-groups/{group_id}/leases/recover-stale:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+      - $ref: '#/components/parameters/ParallelGroupId'
+    post:
+      operationId: recoverStaleProtocolRunnerParallelLeases
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParallelRecoverStaleRequest'
+      responses:
+        '200':
+          description: >
+            Expired active leases were recovered procedurally. A lease with no attempt directory may reset the same
+            never-launched attempt for another lease; any directory/evidence remains stale and requires explicit recovery.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParallelGroupEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/parallel-groups/{group_id}/leases/{lease_id}/heartbeat:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+      - $ref: '#/components/parameters/ParallelGroupId'
+      - $ref: '#/components/parameters/ParallelLeaseId'
+    post:
+      operationId: heartbeatProtocolRunnerParallelLease
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParallelHeartbeatRequest'
+      responses:
+        '200':
+          description: Lease supervision heartbeat was recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParallelGroupEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/parallel-groups/{group_id}/attempts/{attempt_id}/result:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+      - $ref: '#/components/parameters/ParallelGroupId'
+      - $ref: '#/components/parameters/ParallelAttemptId'
+    post:
+      operationId: acceptProtocolRunnerParallelAttemptResult
+      description: >
+        Accepts a procedural result only when lease_id identifies the matching
+        attempt's currently active, server-time-unexpired lease. Expired or
+        superseded lease IDs are fenced from completing a reacquired attempt.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParallelAttemptResultRequest'
+      responses:
+        '200':
+          description: Launcher result was classified procedurally and applied to item/group/run state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParallelGroupEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/parallel-groups/{group_id}/attempts/{attempt_id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+      - $ref: '#/components/parameters/ParallelGroupId'
+      - $ref: '#/components/parameters/ParallelAttemptId'
+    post:
+      operationId: cancelProtocolRunnerParallelAttempt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParallelCancelRequest'
+      responses:
+        '200':
+          description: Active attempt was cancelled conservatively and preserved for recovery.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParallelGroupEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/parallel-groups/{group_id}/items/{item_id}/retry:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+      - $ref: '#/components/parameters/ParallelGroupId'
+      - $ref: '#/components/parameters/ParallelItemId'
+    post:
+      operationId: retryProtocolRunnerParallelItem
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParallelRetryRequest'
+      responses:
+        '200':
+          description: New numbered retry attempt was created for the item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParallelGroupEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/parallel-groups/{group_id}/pause:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+      - $ref: '#/components/parameters/ParallelGroupId'
+    post:
+      operationId: pauseProtocolRunnerParallelGroup
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParallelControlRequest'
+      responses:
+        '200':
+          description: Group was paused; no new leases should be granted while paused.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParallelGroupEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/parallel-groups/{group_id}/stop:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+      - $ref: '#/components/parameters/ParallelGroupId'
+    post:
+      operationId: stopProtocolRunnerParallelGroup
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ParallelControlRequest'
+      responses:
+        '200':
+          description: Group was stopped conservatively and incomplete work was not advanced.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ParallelGroupEnvelope'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/runs/{run_instance_id}/events:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+      - in: query
+        name: limit
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+    get:
+      operationId: getProtocolRunnerEvents
+      responses:
+        '200':
+          description: Append-only event ledger, optionally bounded to the latest events.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, events]
+                properties:
+                  ok:
+                    const: true
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RunnerEvent'
+  /api/runs/{run_instance_id}/diagnostics:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+    get:
+      operationId: getProtocolRunnerRunDiagnostics
+      responses:
+        '200':
+          description: Current run diagnostics, allowed actions, and latest evidence pointers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunDiagnosticsEnvelope'
+  /api/runs/{run_instance_id}/files/{kind}/{filename}:
+    parameters:
+      - $ref: '#/components/parameters/RunInstanceId'
+      - in: path
+        name: kind
+        required: true
+        schema:
+          type: string
+          enum: [step, steps, prompt, prompts, start, starts, status, statuses]
+      - in: path
+        name: filename
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: readProtocolRunnerEvidenceFile
+      responses:
+        '200':
+          description: One runner-owned procedural evidence file.
+          content:
+            text/markdown:
+              schema:
+                type: string
+            application/json:
+              schema:
+                type: object
+            application/x-ndjson:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+components:
+  securitySchemes:
+    LocalControlToken:
+      type: http
+      scheme: bearer
+      description: Local control token from PROTOCOL_RUNNER_CONTROL_TOKEN. Never include it in browser assets, URLs, or logs.
+  parameters:
+    RunInstanceId:
+      in: path
+      name: run_instance_id
+      required: true
+      schema:
+        type: string
+        pattern: '^[a-z0-9_-]+$'
+    ParallelGroupId:
+      in: path
+      name: group_id
+      required: true
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9][A-Za-z0-9_-]*$'
+    ParallelLeaseId:
+      in: path
+      name: lease_id
+      required: true
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9][A-Za-z0-9_-]*$'
+    ParallelAttemptId:
+      in: path
+      name: attempt_id
+      required: true
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9][A-Za-z0-9_-]*$'
+    ParallelItemId:
+      in: path
+      name: item_id
+      required: true
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9][A-Za-z0-9_-]*$'
+  responses:
+    ErrorResponse:
+      description: Protocol Runner error envelope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    HealthResponse:
+      type: object
+      required: [ok, service, adapters]
+      properties:
+        ok:
+          type: boolean
+        service:
+          const: protocol-runner-api
+        adapters:
+          type: object
+          additionalProperties: true
+    DiagnosticsResponse:
+      type: object
+      required: [ok, service, store, adapters]
+      properties:
+        ok:
+          type: boolean
+        service:
+          const: protocol-runner-api
+        store:
+          allOf:
+            - $ref: '#/components/schemas/RunnerStoreDiagnostics'
+            - type: object
+              required: [runs]
+              properties:
+                runs:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/RunListItem'
+        adapters:
+          type: object
+          additionalProperties: true
+    RunnerStoreDiagnostics:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [json, sqlite, hybrid]
+        sqlite:
+          $ref: '#/components/schemas/SqliteIntegrityReport'
+        artifact_reconciliation:
+          $ref: '#/components/schemas/RunArtifactReconciliationReport'
+        primary:
+          $ref: '#/components/schemas/RunnerStoreDiagnostics'
+        legacy_json:
+          $ref: '#/components/schemas/RunnerStoreDiagnostics'
+    SqliteIntegrityReport:
+      type: object
+      required:
+        [schema_version, foreign_keys_enabled, foreign_key_violation_count, migrated_from, orphan_rows_removed]
+      properties:
+        schema_version:
+          type: string
+        foreign_keys_enabled:
+          type: boolean
+        foreign_key_violation_count:
+          type: integer
+          minimum: 0
+        migrated_from:
+          type: [string, 'null']
+        orphan_rows_removed:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+    RunArtifactReconciliationReport:
+      type: object
+      required: [transactions_found, create_finalized, create_abandoned, retire_restored, retire_finished]
+      properties:
+        transactions_found:
+          type: integer
+          minimum: 0
+        create_finalized:
+          type: integer
+          minimum: 0
+        create_abandoned:
+          type: integer
+          minimum: 0
+        retire_restored:
+          type: integer
+          minimum: 0
+        retire_finished:
+          type: integer
+          minimum: 0
+    DesktopOperatorGateResponse:
+      type: object
+      required: [ok, gate]
+      properties:
+        ok:
+          type: boolean
+        gate:
+          type: object
+          additionalProperties: true
+    CreateRunRequest:
+      type: object
+      required: [work_plan]
+      properties:
+        run_instance_id:
+          type: string
+          pattern: '^[a-z0-9_-]+$'
+        work_plan:
+          $ref: '#/components/schemas/WorkPlan'
+        automation:
+          $ref: '#/components/schemas/AutomationSettings'
+        auto_pickup:
+          type: boolean
+        auto_advance:
+          type: boolean
+    AutomationRequest:
+      type: object
+      properties:
+        auto_pickup:
+          type: boolean
+        auto_advance:
+          type: boolean
+    AutomationSettings:
+      type: object
+      required: [auto_pickup, auto_advance]
+      properties:
+        auto_pickup:
+          type: boolean
+        auto_advance:
+          type: boolean
+    BindRunRequest:
+      type: object
+      required: [binding_kind]
+      properties:
+        binding_kind:
+          type: string
+          enum: [serial_desktop, parallel_only]
+        visible_thread_label:
+          type: string
+          description: Required for serial_desktop binding. Exact visible Codex Desktop sidebar label.
+        relay_channel_id:
+          type: string
+        relay_channel_name:
+          type: string
+        binding_id:
+          type: string
+    ReturnRunRequest:
+      type: object
+      required: [run_instance_id, step_id, status]
+      properties:
+        run_instance_id:
+          type: string
+        step_id:
+          type: string
+        status:
+          type: string
+          enum: [completed, blocked]
+        summary:
+          type: string
+    StepStartReportRequest:
+      type: object
+      required: [run_instance_id, step_id, prompt_attempt_id, start_token]
+      properties:
+        run_instance_id:
+          type: string
+        step_id:
+          type: string
+        prompt_attempt_id:
+          type: string
+        start_token:
+          type: string
+    RunEnvelope:
+      type: object
+      required: [ok, run]
+      properties:
+        ok:
+          const: true
+        run:
+          $ref: '#/components/schemas/RunView'
+    PromptSendEnvelope:
+      type: object
+      required: [ok, run]
+      properties:
+        ok:
+          const: true
+        run:
+          $ref: '#/components/schemas/RunView'
+        attempt:
+          type: integer
+        prompt_file:
+          $ref: '#/components/schemas/StoreFileRef'
+        send_result:
+          $ref: '#/components/schemas/PromptSendResult'
+        blocked_reason:
+          type: string
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+    ReturnEnvelope:
+      type: object
+      required: [ok, run]
+      properties:
+        ok:
+          const: true
+        run:
+          $ref: '#/components/schemas/RunView'
+        attempt:
+          type: integer
+        status_file:
+          $ref: '#/components/schemas/StoreFileRef'
+        transition:
+          type: object
+          additionalProperties: true
+        blocked_reason:
+          type: string
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+    StartReportEnvelope:
+      type: object
+      required: [ok, run]
+      properties:
+        ok:
+          const: true
+        run:
+          $ref: '#/components/schemas/RunView'
+        attempt:
+          type: integer
+        start_file:
+          $ref: '#/components/schemas/StoreFileRef'
+        blocked_reason:
+          type: string
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+    ParallelPreflightEnvelope:
+      type: object
+      required: [ok, run, group, preflight]
+      properties:
+        ok:
+          const: true
+        run:
+          $ref: '#/components/schemas/RunView'
+        group:
+          $ref: '#/components/schemas/ParallelGroupState'
+        preflight:
+          $ref: '#/components/schemas/ParallelPreflightResult'
+    ParallelGroupEnvelope:
+      type: object
+      required: [ok, run, group]
+      properties:
+        ok:
+          const: true
+        run:
+          $ref: '#/components/schemas/RunView'
+        group:
+          $ref: '#/components/schemas/ParallelGroupState'
+        leases:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParallelLeasePacket'
+        lease:
+          anyOf:
+            - $ref: '#/components/schemas/ParallelLeaseState'
+            - type: 'null'
+        attempt:
+          $ref: '#/components/schemas/ParallelAttemptState'
+        previous_attempt_id:
+          type:
+            - string
+            - 'null'
+        observed_at:
+          type: string
+        recovered_count:
+          type: integer
+          minimum: 0
+        stale_lease_ids:
+          type: array
+          items:
+            type: string
+        stale_attempt_ids:
+          type: array
+          items:
+            type: string
+        stale_item_ids:
+          type: array
+          items:
+            type: string
+        requeued_lease_ids:
+          type: array
+          description: >
+            Expired leases whose absent attempt directory and non-redirected,
+            physically contained existing ancestors proved launch/setup never began.
+          items:
+            type: string
+        requeued_attempt_ids:
+          type: array
+          description: Existing attempt identities reset to created for another lease after proven pre-launch abandonment.
+          items:
+            type: string
+        requeued_item_ids:
+          type: array
+          items:
+            type: string
+        attention_lease_ids:
+          type: array
+          description: Expired leases with an attempt directory or ambiguous state that require explicit recovery.
+          items:
+            type: string
+        attention_attempt_ids:
+          type: array
+          items:
+            type: string
+        attention_item_ids:
+          type: array
+          items:
+            type: string
+    ParallelLeaseRequest:
+      type: object
+      required: [executor_id, capacity]
+      properties:
+        executor_id:
+          type: string
+        capacity:
+          type: integer
+          minimum: 1
+        lease_ttl_ms:
+          type: integer
+          minimum: 1
+          default: 300000
+          description: Optional executor override; the API applies a mandatory five-minute default when omitted.
+    ParallelHeartbeatRequest:
+      type: object
+      description: >
+        Renews the active lease expiry from server receipt time by its original
+        TTL and records optional procedural warnings.
+      properties:
+        heartbeat_at:
+          type: string
+          description: Optional normalized executor-reported timestamp; it cannot regress and does not control expiry.
+        attempt_warnings:
+          type: array
+          description: >
+            Optional non-terminal timing/control warnings observed by the executor for the active attempt.
+            These warnings are procedural visibility only and do not complete, retry, advance, or cancel work.
+          items:
+            $ref: '#/components/schemas/ParallelAttemptWarning'
+    ParallelRecoverStaleRequest:
+      type: object
+      properties:
+        observed_at:
+          type: string
+          description: Optional ISO timestamp used by deterministic tests; defaults to server time.
+    ParallelAttemptResultRequest:
+      type: object
+      required: [lease_id, launcher_status]
+      properties:
+        lease_id:
+          type: string
+          description: Must identify the matching attempt's currently active, server-time-unexpired lease.
+        attempt_id:
+          type: string
+          description: Optional body echo of the path attempt_id; when supplied, it must match the path value.
+        launcher_status:
+          type: string
+          enum: [completed, blocked, failed, cancelled, timed_out, evidence_missing, output_missing, status_invalid]
+        status_report:
+          type: object
+          additionalProperties: true
+        process:
+          type: object
+          additionalProperties: true
+        status_report_path:
+          type: string
+        sealed_output_path:
+          type: string
+        result_path:
+          type: string
+        summary:
+          type: string
+    ParallelRetryRequest:
+      type: object
+      properties:
+        requested_by:
+          type: string
+        reason:
+          type: string
+    ParallelControlRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+    ParallelCancelRequest:
+      type: object
+      required: [lease_id]
+      properties:
+        lease_id:
+          type: string
+        reason:
+          type: string
+    CloseRunRequest:
+      type: object
+      properties:
+        source_handoff_acknowledgements:
+          type: array
+          items:
+            type: string
+            pattern: '^[A-Za-z0-9_-]+@[0-9a-f]{40}$'
+          description: Exact attempt_id@commit acknowledgements after coordinator integration or preservation. Closeout refuses live or retained source workspaces and unacknowledged handoffs.
+        delete_sealed_outputs:
+          type: boolean
+          default: false
+          description: >
+            When true, closeout also deletes the declared parallel
+            sealed-output primary artifact files for this run and any empty
+            parent folders up to the declared sealed-output base directory.
+            Normal closeout leaves sealed outputs in place.
+    CloseoutEnvelope:
+      type: object
+      required: [ok, closeout]
+      properties:
+        ok:
+          const: true
+        closeout:
+          $ref: '#/components/schemas/RunCloseout'
+    RunCloseout:
+      type: object
+      required: [run_instance_id, closed_run, sealed_output_cleanup, artifact_cleanup]
+      properties:
+        run_instance_id:
+          type: string
+        closed_run:
+          $ref: '#/components/schemas/RunView'
+        relay_cleanup:
+          anyOf:
+            - $ref: '#/components/schemas/RelayCleanupResult'
+            - type: 'null'
+        sealed_output_cleanup:
+          $ref: '#/components/schemas/SealedOutputCleanupResult'
+        artifact_cleanup:
+          $ref: '#/components/schemas/ArtifactCleanupResult'
+    SealedOutputCleanupResult:
+      type: object
+      required:
+        - requested
+        - contract_root
+        - target_count
+        - deleted_files
+        - missing_files
+        - deleted_empty_dirs
+        - targets
+      properties:
+        requested:
+          type: boolean
+        contract_root:
+          type: string
+        target_count:
+          type: integer
+          minimum: 0
+        deleted_files:
+          type: integer
+          minimum: 0
+        missing_files:
+          type: integer
+          minimum: 0
+        deleted_empty_dirs:
+          type: integer
+          minimum: 0
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/SealedOutputCleanupTarget'
+    SealedOutputCleanupTarget:
+      type: object
+      required: [step_id, group_id, item_id, target, path, deleted, missing, deleted_empty_dirs]
+      properties:
+        step_id:
+          type: string
+        group_id:
+          type: string
+        item_id:
+          type: string
+        target:
+          type: string
+        path:
+          type: string
+        deleted:
+          type: boolean
+        missing:
+          type: boolean
+        deleted_empty_dirs:
+          type: array
+          items:
+            type: string
+    RelayCleanupResult:
+      type: object
+      required: [ok, channel_id, cleanup_state]
+      properties:
+        ok:
+          type: boolean
+        channel_id:
+          type:
+            - string
+            - 'null'
+        cleanup_state:
+          type: string
+          enum: [active, cleanup_requested, cleaned_up, cleanup_failed]
+        message:
+          type: string
+    ArtifactCleanupResult:
+      type: object
+      required: [ok, deleted, run_instance_id, run_dir]
+      properties:
+        ok:
+          const: true
+        deleted:
+          const: true
+        run_instance_id:
+          type: string
+        run_dir:
+          type: string
+    ValidationEnvelope:
+      type: object
+      required: [ok, validation]
+      properties:
+        ok:
+          const: true
+        validation:
+          type: object
+          required: [ok, issues, state]
+          properties:
+            ok:
+              type: boolean
+            issues:
+              type: array
+              items:
+                $ref: '#/components/schemas/ValidationIssue'
+            state:
+              $ref: '#/components/schemas/RunState'
+    ValidationIssue:
+      type: object
+      required: [code, message, path, severity]
+      properties:
+        code:
+          type: string
+          examples: [contract.path_missing]
+        message:
+          type: string
+        path:
+          type: string
+        severity:
+          type: string
+          enum: [error, warning]
+    WorkPlan:
+      type: object
+      required: [schema_version, run_title, execution_mode, default_contract, steps]
+      properties:
+        schema_version:
+          const: protocol_runner.work_plan.v1
+        run_title:
+          type: string
+        execution_mode:
+          type: string
+          enum: [serial, mixed]
+        default_contract:
+          $ref: '#/components/schemas/ContractReference'
+        steps:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/RunStep'
+    ContractReference:
+      type: object
+      required: [title, path]
+      properties:
+        title:
+          type: string
+        path:
+          type: string
+          description: Repo-relative or configured-contract-root-relative local file path.
+    RunStep:
+      anyOf:
+        - $ref: '#/components/schemas/SerialRunStep'
+        - $ref: '#/components/schemas/ParallelGroupStep'
+    SerialRunStep:
+      type: object
+      required:
+        - step_id
+        - step_kind
+        - contract
+        - planned_step
+        - visible_work_item
+        - prompt_template
+        - on_completed
+        - on_blocked
+      properties:
+        step_id:
+          type: string
+        step_kind:
+          type: string
+          enum: [work, review]
+        contract:
+          anyOf:
+            - $ref: '#/components/schemas/ContractReference'
+            - type: 'null'
+        planned_step:
+          type: string
+        visible_work_item:
+          type: object
+          additionalProperties: true
+        prompt_template:
+          type: string
+        on_completed:
+          $ref: '#/components/schemas/TransitionRule'
+        on_blocked:
+          $ref: '#/components/schemas/TransitionRule'
+    ParallelGroupStep:
+      type: object
+      required:
+        - step_id
+        - step_kind
+        - group_id
+        - executor
+        - contract_ref
+        - max_concurrency
+        - sealed_output_defaults
+        - items
+        - on_completed
+        - on_blocked
+      properties:
+        participation:
+          type: string
+          enum: [artifact_only, source_writer]
+          default: artifact_only
+        source_base_commit:
+          type: string
+          pattern: '^[0-9a-f]{40}$'
+          description: Required exact Git base for source_writer participation; rejected for artifact_only.
+        step_id:
+          type: string
+        step_kind:
+          const: parallel_group
+        group_id:
+          type: string
+        label:
+          type: string
+        executor:
+          type: string
+          enum: [codex_exec]
+        contract_ref:
+          type: string
+        max_concurrency:
+          type: integer
+          minimum: 1
+        required_worker_capabilities:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/WorkerCapability'
+          description: Optional worker runtime capabilities the parallel executor must prove before leasing group items.
+        sealed_output_defaults:
+          $ref: '#/components/schemas/ParallelGroupSealedOutputDefaults'
+        timeout_policy:
+          type: object
+          additionalProperties: true
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ParallelGroupItem'
+        on_completed:
+          $ref: '#/components/schemas/TransitionRule'
+        on_blocked:
+          $ref: '#/components/schemas/TransitionRule'
+    ParallelGroupSealedOutputDefaults:
+      type: object
+      required: [base_dir, primary_artifact]
+      properties:
+        base_dir:
+          type: string
+          description: >
+            Contract-root-relative sealed-output base directory. It must be
+            physically disjoint from the runner-owned run directory, as must
+            every derived item primary-output path. Existing symlink/junction
+            ancestors are resolved for both levels when enforcing this boundary.
+        primary_artifact:
+          type: string
+    ParallelGroupItem:
+      type: object
+      required: [item_id, input_ref]
+      properties:
+        owned_source_paths:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+          description: Required for source_writer; exact non-overlapping repo-relative source file paths. Directories, links, ignored files and Git pathspec expressions are not source custody.
+        item_id:
+          type: string
+        label:
+          type: string
+        input_ref:
+          type: string
+        variables:
+          type: object
+          additionalProperties: true
+        contract_ref:
+          type: string
+        sealed_output:
+          $ref: '#/components/schemas/ParallelGroupItemSealedOutput'
+    ParallelGroupItemSealedOutput:
+      type: object
+      description: >
+        Optional item-specific path components. The resulting primary-output
+        path is included in physical run-directory overlap enforcement and its
+        physical parent must remain within the physical declared base and
+        contract root. Preflight requires the final target absent. Explicit
+        cleanup may unlink a final link without following it.
+      properties:
+        unit_id:
+          type: string
+        primary_artifact:
+          type: string
+    WorkerCapability:
+      type: string
+      enum: [base, json_transform, source_writer]
+    TransitionRule:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [next, pause, stop, go_to]
+        step_id:
+          type: string
+    RunView:
+      type: object
+      required: [run_instance_id, state, work_plan]
+      properties:
+        run_instance_id:
+          type: string
+        state:
+          $ref: '#/components/schemas/RunState'
+        work_plan:
+          $ref: '#/components/schemas/WorkPlan'
+    RunState:
+      type: object
+      required:
+        - schema_version
+        - run_instance_id
+        - work_plan_path
+        - status
+        - current_step_id
+        - current_step_ordinal
+        - automation
+        - thread_binding
+        - timestamps
+      properties:
+        schema_version:
+          const: protocol_runner.run_state.v1
+        run_instance_id:
+          type: string
+        work_plan_path:
+          type: string
+        status:
+          type: string
+          enum:
+            - draft
+            - bound
+            - ready
+            - dispatching_prompt
+            - waiting_for_start_report
+            - waiting_for_completion_report
+            - running
+            - paused
+            - blocked
+            - completed
+            - failed
+            - closed
+        current_step_id:
+          type:
+            - string
+            - 'null'
+        current_step_ordinal:
+          type:
+            - integer
+            - 'null'
+        automation:
+          $ref: '#/components/schemas/AutomationSettings'
+        thread_binding:
+          anyOf:
+            - $ref: '#/components/schemas/BindingMetadata'
+            - type: 'null'
+        last_sent_prompt_message_id:
+          type: string
+        pending_start_report:
+          $ref: '#/components/schemas/PromptStartExpectation'
+        last_start_report:
+          $ref: '#/components/schemas/StepStartReport'
+        last_completion:
+          $ref: '#/components/schemas/CompletionReturn'
+        blocked_reason:
+          type: string
+        timestamps:
+          type: object
+          required: [created_at, updated_at]
+          properties:
+            created_at:
+              type: string
+            updated_at:
+              type: string
+            started_at:
+              type: string
+            completed_at:
+              type: string
+    RunListItem:
+      type: object
+      required: [run_instance_id, status, current_step_id, current_step_ordinal, automation, updated_at]
+      properties:
+        run_instance_id:
+          type: string
+        status:
+          type: string
+        current_step_id:
+          type:
+            - string
+            - 'null'
+        current_step_ordinal:
+          type:
+            - integer
+            - 'null'
+        automation:
+          $ref: '#/components/schemas/AutomationSettings'
+        updated_at:
+          type: string
+    BindingMetadata:
+      type: object
+      required: [binding_kind]
+      properties:
+        binding_kind:
+          type: string
+          enum: [serial_desktop, parallel_only]
+        visible_thread_label:
+          type: string
+        relay_channel_id:
+          type: string
+        relay_channel_name:
+          type: string
+        binding_id:
+          type: string
+        cleanup_state:
+          type: string
+          enum: [active, cleanup_requested, cleaned_up, cleanup_failed]
+    CompletionReturn:
+      type: object
+      required: [run_instance_id, step_id, status]
+      properties:
+        run_instance_id:
+          type: string
+        step_id:
+          type: string
+        status:
+          type: string
+          enum: [completed, blocked]
+        summary:
+          type: string
+    PromptStartExpectation:
+      type: object
+      required: [run_instance_id, step_id, prompt_attempt_id, start_token, attempt, prompt_file, sent_at]
+      properties:
+        run_instance_id:
+          type: string
+        step_id:
+          type: string
+        prompt_attempt_id:
+          type: string
+        start_token:
+          type: string
+        attempt:
+          type: integer
+        prompt_file:
+          type: string
+        sent_at:
+          type: string
+    StepStartReport:
+      type: object
+      required: [run_instance_id, step_id, prompt_attempt_id, start_token]
+      properties:
+        run_instance_id:
+          type: string
+        step_id:
+          type: string
+        prompt_attempt_id:
+          type: string
+        start_token:
+          type: string
+    RunnerEvent:
+      type: object
+      required: [event_id, event_type, run_instance_id, timestamp, details]
+      properties:
+        event_id:
+          type: string
+        event_type:
+          type: string
+        run_instance_id:
+          type: string
+        step_id:
+          type: string
+        timestamp:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    RunDiagnosticsEnvelope:
+      type: object
+      required: [ok, diagnostics]
+      properties:
+        ok:
+          const: true
+        diagnostics:
+          type: object
+          required:
+            - run_instance_id
+            - status
+            - current_step_id
+            - current_step_ordinal
+            - automation
+            - next_allowed_actions
+            - last_event
+            - parallel_groups
+            - latest_files
+            - evidence_paths
+          properties:
+            run_instance_id:
+              type: string
+            status:
+              type: string
+            current_step_id:
+              type:
+                - string
+                - 'null'
+            current_step_ordinal:
+              type:
+                - integer
+                - 'null'
+            automation:
+              $ref: '#/components/schemas/AutomationSettings'
+            blocked_reason:
+              type: string
+            next_allowed_actions:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            last_event:
+              anyOf:
+                - $ref: '#/components/schemas/RunnerEvent'
+                - type: 'null'
+            parallel_groups:
+              type: array
+              items:
+                $ref: '#/components/schemas/ParallelGroupState'
+            latest_files:
+              type: object
+              additionalProperties:
+                type: string
+            evidence_paths:
+              type: object
+              additionalProperties: true
+    PromptSendResult:
+      type: object
+      required: [send_status, desktop_result]
+      properties:
+        send_status:
+          type: string
+          enum: [sent, not_sent, unknown]
+        desktop_result:
+          type: string
+        message:
+          type: string
+        thread_id:
+          type:
+            - string
+            - 'null'
+        thread_title:
+          type:
+            - string
+            - 'null'
+        turn_id:
+          type:
+            - string
+            - 'null'
+        item_id:
+          type:
+            - string
+            - 'null'
+        selection_confirmed:
+          type:
+            - boolean
+            - 'null'
+        desktop_diagnostics:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+          description: Optional Desktop API diagnostic payload, such as compose probe evidence for not_sent failures.
+    ParallelGroupState:
+      type: object
+      required:
+        - run_instance_id
+        - step_id
+        - group_id
+        - ordinal
+        - status
+        - executor
+        - contract_ref
+        - max_concurrency
+        - required_worker_capabilities
+        - preflight_status
+        - checked_at
+        - checked_by
+        - preflight_errors
+        - preflight_warnings
+        - preflight_result
+        - items
+        - attempts
+        - leases
+      properties:
+        run_instance_id:
+          type: string
+        step_id:
+          type: string
+        group_id:
+          type: string
+        ordinal:
+          type: integer
+        status:
+          type: string
+          enum: [pending, preflighting, ready_to_lease, leasing, running, paused, completed, needs_attention, stopped, cancelled]
+        executor:
+          type: string
+          enum: [codex_exec]
+        contract_ref:
+          type: string
+        max_concurrency:
+          type: integer
+        required_worker_capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkerCapability'
+        preflight_status:
+          type: string
+          enum: [not_run, passed, failed]
+        checked_at:
+          type:
+            - string
+            - 'null'
+        checked_by:
+          type:
+            - string
+            - 'null'
+        preflight_errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParallelPreflightCheck'
+        preflight_warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParallelPreflightCheck'
+        preflight_result:
+          anyOf:
+            - $ref: '#/components/schemas/ParallelPreflightResult'
+            - type: 'null'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParallelItemState'
+        attempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParallelAttemptState'
+        leases:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParallelLeaseState'
+    ParallelItemState:
+      type: object
+      required:
+        - run_instance_id
+        - step_id
+        - group_id
+        - item_id
+        - status
+        - input_ref
+        - contract_ref
+        - sealed_output_target
+        - latest_attempt_id
+      properties:
+        run_instance_id:
+          type: string
+        step_id:
+          type: string
+        group_id:
+          type: string
+        item_id:
+          type: string
+        label:
+          type: string
+        status:
+          type: string
+          enum: [pending, leased, running, completed, blocked, needs_recovery, cancelled, stopped]
+        input_ref:
+          type: string
+        contract_ref:
+          type: string
+        sealed_output_target:
+          type: string
+        latest_attempt_id:
+          type:
+            - string
+            - 'null'
+    ParallelAttemptState:
+      type: object
+      required:
+        - run_instance_id
+        - step_id
+        - group_id
+        - item_id
+        - attempt_id
+        - attempt_number
+        - status
+        - evidence_dir
+        - warnings
+        - latest_lease_id
+        - created_at
+        - updated_at
+      properties:
+        run_instance_id:
+          type: string
+        step_id:
+          type: string
+        group_id:
+          type: string
+        item_id:
+          type: string
+        attempt_id:
+          type: string
+        attempt_number:
+          type: integer
+        status:
+          type: string
+          enum: [created, leased, running, completed, blocked, failed, cancelled, stale, timed_out, evidence_missing, output_missing, status_invalid]
+        evidence_dir:
+          type:
+            - string
+            - 'null'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParallelAttemptWarning'
+        latest_lease_id:
+          type:
+            - string
+            - 'null'
+        created_at:
+          type: string
+        updated_at:
+          type: string
+    ParallelAttemptWarning:
+      type: object
+      required:
+        - code
+        - severity
+        - message
+        - observed_at
+        - threshold_ms
+        - elapsed_ms
+      properties:
+        code:
+          type: string
+          enum: [long_running, possibly_stalled]
+        severity:
+          type: string
+          enum: [warning]
+        message:
+          type: string
+        observed_at:
+          type: string
+        threshold_ms:
+          type: integer
+          minimum: 1
+        elapsed_ms:
+          type: integer
+          minimum: 0
+        quiet_ms:
+          type: integer
+          minimum: 0
+        last_observed_evidence_at:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    ParallelLeaseState:
+      type: object
+      required:
+        - run_instance_id
+        - step_id
+        - group_id
+        - item_id
+        - attempt_id
+        - lease_id
+        - executor_id
+        - status
+        - leased_at
+        - expires_at
+        - heartbeat_at
+        - created_at
+        - updated_at
+      properties:
+        run_instance_id:
+          type: string
+        step_id:
+          type: string
+        group_id:
+          type: string
+        item_id:
+          type: string
+        attempt_id:
+          type: string
+        lease_id:
+          type: string
+        executor_id:
+          type: string
+        status:
+          type: string
+          enum: [active, released, expired, cancelled]
+        leased_at:
+          type: string
+        expires_at:
+          type:
+            - string
+            - 'null'
+          description: Mandatory for new leases; null is retained only for compatibility with legacy active rows.
+        heartbeat_at:
+          type:
+            - string
+            - 'null'
+        created_at:
+          type: string
+        updated_at:
+          type: string
+    ParallelLeasePacket:
+      allOf:
+        - $ref: '#/components/schemas/ParallelLeaseState'
+        - type: object
+          required:
+            - run_dir
+            - attempt_dir
+            - prompt_path
+            - worker_packet_path
+            - status_report_path
+            - process_path
+            - result_path
+            - sealed_output_path
+            - input_ref
+            - contract_ref
+            - variables
+            - required_worker_capabilities
+          properties:
+            source_writer:
+              type: object
+              required: [base_commit, owned_paths, artifact_root]
+              properties:
+                base_commit:
+                  type: string
+                  pattern: '^[0-9a-f]{40}$'
+                owned_paths:
+                  type: array
+                  items:
+                    type: string
+                artifact_root:
+                  type: string
+                  description: API-owned absolute canonical artifact root; source cwd does not replace this owner.
+            run_dir:
+              type: string
+              description: Absolute runner-owned run directory used as the physical containment boundary for attempt setup.
+            attempt_dir:
+              type: string
+            prompt_path:
+              type: string
+            worker_packet_path:
+              type: string
+            status_report_path:
+              type: string
+            process_path:
+              type: string
+            result_path:
+              type: string
+            sealed_output_path:
+              type: string
+            input_ref:
+              type: string
+            contract_ref:
+              type: string
+            variables:
+              type: object
+              additionalProperties: true
+            required_worker_capabilities:
+              type: array
+              items:
+                $ref: '#/components/schemas/WorkerCapability'
+    ParallelPreflightResult:
+      type: object
+      required:
+        - run_instance_id
+        - step_id
+        - group_id
+        - passed
+        - checked_at
+        - checked_by
+        - preflight_status
+        - checks
+        - errors
+        - warnings
+        - executor_summary
+        - max_concurrency
+        - item_count
+        - launchable_item_count
+      properties:
+        run_instance_id:
+          type: string
+        step_id:
+          type: string
+        group_id:
+          type: string
+        passed:
+          type: boolean
+        checked_at:
+          type: string
+        checked_by:
+          type: string
+        preflight_status:
+          type: string
+          enum: [passed, failed]
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParallelPreflightCheck'
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParallelPreflightCheck'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParallelPreflightCheck'
+        executor_summary:
+          type: object
+          additionalProperties: true
+        max_concurrency:
+          type: integer
+        item_count:
+          type: integer
+        launchable_item_count:
+          type: integer
+        evidence_file:
+          $ref: '#/components/schemas/StoreFileRef'
+    ParallelPreflightCheck:
+      type: object
+      required: [code, status, message]
+      properties:
+        code:
+          type: string
+        status:
+          type: string
+          enum: [passed, failed, warning]
+        message:
+          type: string
+        path:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+    StoreFileRef:
+      type: object
+      required: [kind, path, relative_path]
+      properties:
+        kind:
+          type: string
+          enum: [step, prompt, start, status, parallel_preflight]
+        path:
+          type: string
+        relative_path:
+          type: string
+        attempt:
+          type: integer
+    ErrorEnvelope:
+      type: object
+      required: [ok, error]
+      properties:
+        ok:
+          const: false
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+            run_instance_id:
+              type: string
+            file_path:
+              type: string

@@ -1,0 +1,39 @@
+{
+  "schema_version": "protocol_runner.work_plan.v1",
+  "run_title": "Preserve completed work while recovering one item",
+  "execution_mode": "mixed",
+  "default_contract": {
+    "title": "Recovery demonstration",
+    "path": "examples/recovery/contract.md"
+  },
+  "steps": [
+    {
+      "step_id": "review_items",
+      "step_kind": "parallel_group",
+      "group_id": "reviews",
+      "label": "Two independent evidence reviews",
+      "executor": "codex_exec",
+      "contract_ref": "examples/recovery/contract.md",
+      "max_concurrency": 2,
+      "required_worker_capabilities": ["base"],
+      "sealed_output_defaults": {
+        "base_dir": ".protocol-runner/example-outputs/recovery",
+        "primary_artifact": "review.md"
+      },
+      "items": [
+        {
+          "item_id": "alpha",
+          "label": "Completion and missing output",
+          "input_ref": "examples/recovery/inputs/alpha.md"
+        },
+        {
+          "item_id": "beta",
+          "label": "Process exit and substantive correctness",
+          "input_ref": "examples/recovery/inputs/beta.md"
+        }
+      ],
+      "on_completed": { "action": "stop" },
+      "on_blocked": { "action": "pause" }
+    }
+  ]
+}

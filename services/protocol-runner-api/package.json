@@ -1,0 +1,29 @@
+{
+  "name": "@workstation-control/protocol-runner-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b --force",
+    "typecheck": "tsc -b --force",
+    "lint": "eslint .",
+    "dev": "pnpm run build && node dist/main.js",
+    "start": "node dist/main.js",
+    "test": "node ../../ops/run_node_tests.mjs run",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "@workstation-control/protocol-runner-core": "workspace:*",
+    "sql.js": "^1.14.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "@types/node": "^24.3.0",
+    "@types/sql.js": "^1.4.11",
+    "eslint": "^9.32.0",
+    "globals": "^16.3.0",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.39.0"
+  },
+  "license": "MIT"
+}

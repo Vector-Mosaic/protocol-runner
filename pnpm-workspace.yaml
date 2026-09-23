@@ -1,0 +1,9 @@
+packages:
+  - packages/*
+  - services/*
+  - apps/*
+
+onlyBuiltDependencies:
+  - '@swc/core'
+  - esbuild
+  - electron

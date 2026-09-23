@@ -1,0 +1,19 @@
+{
+  "name": "protocol-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Durable execution of declared AI workflows, with inspectable attempts and scoped recovery.",
+  "packageManager": "pnpm@10.30.3",
+  "engines": { "node": ">=20.19.0" },
+  "scripts": {
+    "build": "node scripts/check.mjs build",
+    "test": "node scripts/check.mjs test",
+    "lint": "node scripts/check.mjs lint",
+    "check": "node scripts/check.mjs all",
+    "start": "node scripts/run.mjs start",
+    "demo": "node scripts/run.mjs demo",
+    "desktop": "node scripts/run.mjs desktop"
+  }
+}

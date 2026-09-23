@@ -1,0 +1,29 @@
+{
+  "name": "@workstation-control/protocol-runner-parallel-executor",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b --force",
+    "typecheck": "tsc -b --force",
+    "lint": "eslint .",
+    "test": "node ../../ops/run_node_tests.mjs run",
+    "dev": "pnpm run build && node dist/main.js",
+    "start": "node dist/main.js",
+    "smoke:ladder": "pnpm --filter @workstation-control/protocol-runner-api build && pnpm run build && node dist/smoke_ladder.js",
+    "smoke:recovery": "pnpm --filter @workstation-control/protocol-runner-api build && pnpm run build && node dist/recovery_smoke.js",
+    "smoke:process-control": "pnpm --filter @workstation-control/protocol-runner-api build && pnpm run build && node dist/process_control_smoke.js",
+    "smoke:timing-warnings": "pnpm --filter @workstation-control/protocol-runner-api build && pnpm run build && node dist/timing_warning_smoke.js",
+    "smoke:worker-runtime-profile": "pnpm --filter @workstation-control/protocol-runner-api build && pnpm run build && node dist/worker_runtime_profile_smoke.js",
+    "lint:fix": "eslint . --fix"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "@types/node": "^24.3.0",
+    "eslint": "^9.32.0",
+    "globals": "^16.3.0",
+    "typescript": "~5.8.3",
+    "typescript-eslint": "^8.39.0"
+  },
+  "license": "MIT"
+}
