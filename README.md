@@ -94,8 +94,12 @@ backend; a missing run on another backend does not mean it was lost.
 | Serial / mixed Desktop work | Preserve an existing conversation for dependent steps; combine it with independent workers | Optional Windows Desktop integration, prepared visible conversation and explicit binding |
 | Source-writing workers | Isolated source contributions with declared ownership and Git handoff | Git, Python and the included source-workspace support; separate from artifact-only examples |
 
-The Windows Desktop path is sensitive to application and visible UI state. The
-portable API/executor path does not require Desktop or Discord. See the
+The optional Desktop/Discord path began as a workaround for automating real Codex
+threads and serial workflows before `codex exec` was fully released for this use.
+Direct CLI execution became the cleaner automation path once it was available;
+see the [original design rationale](docs/engineering.md#from-desktop-conversations-to-cli-workers).
+The retained Windows Desktop path is sensitive to application and visible UI state.
+The portable API/executor path does not require Desktop or Discord. See the
 [architecture](docs/architecture.md), [execution settings](docs/execution.md),
 [Windows setup](docs/windows-desktop.md) and [source-workspace guide](docs/source-workspaces.md)
 for the corresponding paths.

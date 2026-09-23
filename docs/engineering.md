@@ -11,6 +11,25 @@ evaluation and acceptance. Codex supplied extensive implementation, testing,
 investigation and operating work. The technical contribution is the combined system
 and the decisions behind it; no claim of unaided authorship is made.
 
+## From Desktop conversations to CLI workers
+
+Justin's original design addressed an execution gap: `codex exec` was not yet fully
+released for the workflow he was building. He needed to create actual Codex Desktop
+threads and run dependent assignments in serial, so he built a Desktop/Discord
+bridge around the available application. Desktop automation operated the threads;
+Discord provided the companion communication channel.
+
+This made the workflow possible, with the additional complexity of visible UI state,
+thread selection, relay bindings and channel configuration. As `codex exec` became
+available, Protocol Runner added a cleaner direct execution path for CLI workers.
+The durable plan, attempt history, explicit returns and recovery behavior remained
+useful across that change in execution mechanism.
+
+The public release leads with direct CLI execution. The earlier Desktop/Discord
+adapter is retained as an optional path for Desktop-based serial and mixed work.
+Its presence reflects the original availability constraint and subsequent evolution;
+Discord and Desktop automation are not prerequisites for the standard CLI workflow.
+
 ## Decisions shaped by failures
 
 ### A delivered message is not a started assignment

@@ -5,6 +5,21 @@ Desktop action queue, Windows UI Automation helpers, and App Server thread
 boundary used by Protocol Runner's serial and mixed modes. The default local
 demonstration does not start any of these services.
 
+## Why this integration exists
+
+The original design needed to create and operate actual Codex Desktop threads and
+carry out dependent steps in serial. Justin built the Desktop/Discord integration
+as a workaround before `codex exec` was fully released for that use. It provided
+an execution bridge through the available Desktop application, with Discord as
+the companion communication channel.
+
+Once `codex exec` became available, Protocol Runner added direct CLI workers as a
+cleaner automation path. That path avoids the visible-UI and Discord setup required
+here. This earlier adapter remains optional for Desktop-based serial and mixed
+workflows. Start with the standard CLI path for new automation; see the
+[design history](engineering.md#from-desktop-conversations-to-cli-workers) for the
+reason these two paths coexist.
+
 ## Requirements
 
 - Windows with an unlocked interactive desktop and Codex Desktop running under
