@@ -1,11 +1,6 @@
 name: Standalone checks
 on:
   workflow_dispatch:
-    inputs:
-      runtime_bundle:
-        description: 'Provide compiled JavaScript for a one-time local live check'
-        type: boolean
-        default: false
 permissions:
   contents: read
 concurrency:
@@ -15,8 +10,6 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: write
     env:
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
@@ -49,12 +42,3 @@ jobs:
       - name: Check foreground startup and local access
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: node scripts/startup-check.mjs
-      - name: Prepare local runtime JavaScript
-        if: ${{ !cancelled() && inputs.runtime_bundle && steps.build.outcome == 'success' }}
-        run: tar -czf runtime-js.tar.gz packages/*/dist services/*/dist
-      - name: Transfer runtime JavaScript
-        if: ${{ !cancelled() && inputs.runtime_bundle && steps.build.outcome == 'success' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "qualification-${GITHUB_RUN_ID}" runtime-js.tar.gz --draft --target "$GITHUB_SHA" --title "Temporary runtime transfer ${GITHUB_RUN_ID}" --notes 'Compiled JavaScript for the maintainer live check. Delete this draft after downloading; not a product release.'

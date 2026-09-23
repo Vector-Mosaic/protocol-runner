@@ -96,3 +96,11 @@ Outputs go under the chosen workspace's `.protocol-runner/qualification/`.
 Console output is a procedural summary; worker evidence stays in those ignored
 local directories. Neither command evaluates the substantive quality of model
 reasoning.
+
+If more than one Codex CLI is installed, check the selected executable's version.
+Set `PROTOCOL_RUNNER_PARALLEL_EXECUTOR_CODEX_COMMAND` to its absolute path when
+necessary; an older CLI may not support the model selected in your configuration.
+Runner does not upgrade the CLI or substitute another model automatically.
+Global Codex instructions and connected tools also remain active. A short smoke
+timeout may be consumed by unrelated machine-specific onboarding; inspect the
+retained attempt before deciding whether to retry with a suitable bound or profile.
