@@ -594,8 +594,8 @@ describe('protocol-runner-api fake lifecycle', () => {
       assert.equal(harness.desktop_adapter.sent_prompts.length, 1)
       assert.match(harness.desktop_adapter.sent_prompts[0].prompt, /Planned step:\nderive item_001/)
       assert.match(harness.desktop_adapter.sent_prompts[0].prompt, /^# Protocol Runner Step Start Report/)
-      assert.ok(harness.desktop_adapter.sent_prompts[0].prompt.includes(path.join(repoRoot, 'scripts', 'tools', 'protocol_runner_step_start.py')))
-      assert.ok(harness.desktop_adapter.sent_prompts[0].prompt.includes(path.join(repoRoot, 'scripts', 'tools', 'protocol_runner_return.py')))
+      assert.ok(harness.desktop_adapter.sent_prompts[0].prompt.includes(path.join(repoRoot, 'scripts', 'tools', 'protocol_runner_step_start.py').replace(/'/g, "''")))
+      assert.ok(harness.desktop_adapter.sent_prompts[0].prompt.includes(path.join(repoRoot, 'scripts', 'tools', 'protocol_runner_return.py').replace(/'/g, "''")))
       assert.equal(harness.desktop_adapter.sent_prompts[0].prompt.split('--base-url http://127.0.0.1:14831').length - 1, 2)
       assert.doesNotMatch(harness.desktop_adapter.sent_prompts[0].prompt, /fake-lifecycle-token-never-real-credentials/)
 

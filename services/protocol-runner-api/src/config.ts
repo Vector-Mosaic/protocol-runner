@@ -166,6 +166,9 @@ export function readProtocolRunnerApiConfig(env: NodeJS.ProcessEnv = process.env
   const port = readPositiveInt(env, 'PROTOCOL_RUNNER_API_PORT', 4831)
   const origin = new URL(`http://${host === '::1' ? '[::1]' : host}:${port}`)
   const pythonExecutable = env.PROTOCOL_RUNNER_PYTHON_EXECUTABLE?.trim() || (process.platform === 'win32' ? 'python' : 'python3')
+  if (/[\r\n\0]/.test(pythonExecutable)) {
+    throw new Error('PROTOCOL_RUNNER_PYTHON_EXECUTABLE must name one executable without line breaks or NUL.')
+  }
   const reportShell = readEnum<SerialReportCommands['shell']>(
     env, 'PROTOCOL_RUNNER_REPORT_SHELL', process.platform === 'win32' ? 'powershell' : 'posix',
     new Set(['powershell', 'posix']),

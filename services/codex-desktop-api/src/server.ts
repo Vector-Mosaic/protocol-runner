@@ -1,6 +1,6 @@
 import http from 'node:http'
 
-import express, { type Request, type Response } from 'express'
+import express, { type Express, type Request, type Response } from 'express'
 
 import { constantTimeSecretEqual, readBearerToken } from './auth.js'
 import type { CodexDesktopConfig } from './config.js'
@@ -8,7 +8,7 @@ import { createLogger } from './logger.js'
 import { CodexDesktopServiceError, type CodexDesktopService } from './service.js'
 import type { DesktopCreateRequest, DesktopPromptRequest, DesktopThreadRequest } from './types.js'
 
-export function createCodexDesktopApp(service: CodexDesktopService, config: CodexDesktopConfig) {
+export function createCodexDesktopApp(service: CodexDesktopService, config: CodexDesktopConfig): Express {
   const logger = createLogger('codex_desktop_http')
   const app = express()
 

@@ -1,6 +1,11 @@
 name: Standalone checks
 on:
   workflow_dispatch:
+    inputs:
+      runtime_bundle:
+        description: 'Provide compiled JavaScript for a one-time local live check'
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -35,3 +40,13 @@ jobs:
         run: pnpm lint
       - name: Reproduce scoped recovery
         run: pnpm demo
+      - name: Prepare local runtime JavaScript
+        if: inputs.runtime_bundle
+        run: tar -czf runtime-js.tar.gz packages/*/dist services/*/dist
+      - name: Transfer runtime JavaScript
+        if: inputs.runtime_bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-js
+          path: runtime-js.tar.gz
+          retention-days: 1

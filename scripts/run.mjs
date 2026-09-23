@@ -82,7 +82,7 @@ function launch(label, script, cwd = root) {
   if (!existsSync(script)) throw new Error(`Missing ${label} build/dependency. Run pnpm install and pnpm build first.`)
   const child = spawn(process.execPath, [script], { cwd, env, stdio: ['ignore', 'inherit', 'inherit', 'ipc'], windowsHide: true })
   const record = { label, child, exit: null }
-  record.exit = new Promise((resolve) => child.once('exit', (code, signal) => {
+  record.exit = new Promise((resolve) => child.once('close', (code, signal) => {
     resolve({ code, signal })
     if (!stopping) {
       process.stderr.write(`${label} exited (${code ?? signal}). Stopping this Runner instance.\n`)

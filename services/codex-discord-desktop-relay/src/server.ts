@@ -1,6 +1,6 @@
 import http from 'node:http'
 
-import express, { type Request, type Response } from 'express'
+import express, { type Express, type Request, type Response } from 'express'
 
 import { constantTimeSecretEqual, readBearerToken } from './auth.js'
 import type { CodexDiscordDesktopRelayConfig } from './config.js'
@@ -47,7 +47,7 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-export function createCodexDiscordDesktopRelayApp(context: CodexDiscordDesktopRelayServerContext) {
+export function createCodexDiscordDesktopRelayApp(context: CodexDiscordDesktopRelayServerContext): Express {
   const app = express()
   const logger = createLogger('codex_discord_desktop_relay_http')
 

@@ -22,7 +22,7 @@ export interface SerialReportCommands {
 
 function quoteArgument(value: string, shell: SerialReportCommands['shell']): string {
   if (/[\r\n\0]/.test(value)) throw new Error('Report command arguments cannot contain line breaks or NUL.')
-  if (/^[a-zA-Z0-9_./:@%+=,-]+$/.test(value)) return value
+  if (/^[a-zA-Z0-9_./:-]+$/.test(value)) return value
   return shell === 'powershell'
     ? `'${value.replace(/'/g, "''")}'`
     : `'${value.replace(/'/g, "'\"'\"'")}'`
