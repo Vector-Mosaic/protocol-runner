@@ -1,6 +1,8 @@
 # Protocol Runner
 
-**Run an explicit AI workflow, preserve what finished, and recover only the work that failed.**
+**Swarm + Structure**
+
+Run an explicit AI workflow, preserve what finished, and recover only the work that failed.
 
 Protocol Runner keeps a work plan, execution state, worker attempts and evidence outside
 the coordinating conversation. It dispatches bounded assignments to Codex workers,

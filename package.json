@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "description": "Durable execution of declared AI workflows, with inspectable attempts and scoped recovery.",
+  "description": "Swarm + Structure. Run explicit AI workflows, preserve what finished, and recover only the work that failed.",
   "packageManager": "pnpm@10.30.3",
   "engines": { "node": ">=20.19.0" },
   "scripts": {
